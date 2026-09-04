@@ -122,7 +122,7 @@ A successful deployment should therefore show the complete infrastructure stack 
 
 The following screenshot shows the output of `docker compose ps` after deployment.
 
-![Infrastructure Health Test]()
+![Infrastructure Health Test](./Infra%20Health.png)
 
 ---
 
