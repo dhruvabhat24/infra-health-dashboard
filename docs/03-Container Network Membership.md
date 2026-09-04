@@ -145,11 +145,7 @@ The following screenshot shows the inspection of `frontend-net`.
 
 ![Frontend Network Inspection](./screenshots/03-frontend-net.png)
 
-**Screenshot filename:** `03-frontend-net.png`
 
-**Upload location:** `docs/screenshots/03-frontend-net.png`
-
----
 
 ### Backend Network Inspection
 
@@ -157,11 +153,7 @@ The following screenshot shows the inspection of `backend-net`.
 
 ![Backend Network Inspection](./screenshots/03-backend-net.png)
 
-**Screenshot filename:** `03-backend-net.png`
 
-**Upload location:** `docs/screenshots/03-backend-net.png`
-
----
 
 ## 8. Actual Test Output
 
