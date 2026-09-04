@@ -1,32 +1,258 @@
 # Infra Health Dashboard
 
-A DevOps portfolio project demonstrating Docker networking, private service-to-service communication, DNS indirection, NGINX load balancing with active health checks, Prometheus observability, and a React operational dashboard.
+A containerized infrastructure monitoring and health-observability platform built with Docker Compose.
 
-## What this demonstrates
+The project simulates a small production-style application environment with isolated networks, multiple backend instances, DNS-based service discovery, load balancing, PostgreSQL, Prometheus monitoring, automated health checks, and a React dashboard.
 
-- Two isolated Docker networks:
-  - `frontend-net`: public application network.
-  - `backend-net`: private/internal network.
-- PostgreSQL is attached **only** to `backend-net`.
-- Two identical Flask API replicas are dual-homed on both networks.
-- Backends reach PostgreSQL through the explicit DNS name `db.internal`.
-- A DNS service runs `dnsmasq` and maps `db.internal` → `172.29.0.10`.
-- NGINX actively checks both backend `/health` endpoints every 2 seconds and rewrites its upstream pool.
-- Prometheus collects custom backend request counters.
-- cAdvisor exposes container CPU/network metrics for all containers.
-- Blackbox Exporter probes HTTP health endpoints.
-- `metrics-api` combines Prometheus traffic data and live health probes.
-- React + Recharts renders Live Traffic, Health Status, and Network Map views.
-- Failure tests demonstrate live degradation and recovery.
-
-> **Important NGINX detail:** open-source NGINX does not include NGINX Plus-style active health checks. This project therefore uses an NGINX container plus a small active-check loop that calls each backend's `/health` endpoint and rewrites/reloads the NGINX upstream configuration. This keeps the load balancer NGINX-based while making the health-check mechanism visible and easy to explain in an interview.
+The goal is to demonstrate how modern DevOps and platform-engineering concepts can work together to build an **observable, resilient, and network-isolated application platform**.
 
 ---
 
-## Architecture diagram
+## Problem Statement
+
+In a distributed application environment, simply running containers is not enough.
+
+A production-style platform needs to answer questions such as:
+
+- Are all services healthy?
+- Is traffic being distributed correctly?
+- What happens when a backend instance fails?
+- Can application services communicate with the database securely?
+- Can the frontend directly access private infrastructure?
+- Is DNS resolution working between services?
+- How many requests is each backend processing?
+- Can infrastructure metrics and application metrics be observed from one place?
+
+Without proper monitoring, service discovery, traffic management, and network isolation, identifying and troubleshooting infrastructure problems becomes difficult.
+
+**Infra Health Dashboard** was designed to simulate these requirements in a local containerized environment.
+
+---
+
+# Project Objective
+
+Build a small but production-inspired infrastructure platform that demonstrates:
+
+- Container orchestration with Docker Compose
+- Network segmentation
+- Service-to-service communication
+- DNS-based service discovery
+- Load balancing
+- Application health checks
+- Database connectivity
+- Infrastructure monitoring
+- Application-level metrics
+- Failure detection
+- Network isolation
+- Real-time visualization
+
+The project focuses not only on making services run, but also on making the infrastructure **observable and resilient**.
+
+---
+
+# Project Plan
+
+The system was designed in layers.
+
+### 1. Networking Layer
+
+Create separate Docker networks for different trust boundaries.
+
+- `frontend-net` → public-facing application layer
+- `backend-net` → private internal infrastructure layer
+
+The backend network is configured as an internal network so private services are not directly exposed to the outside environment.
+
+---
+
+### 2. Application Layer
+
+Deploy two identical backend instances.
+
+```text
+backend-1
+backend-2
+```
+
+Both expose:
+
+```text
+GET /health
+GET /data
+GET /metrics
+```
+
+The `/health` endpoint provides service health information.
+
+The `/data` endpoint demonstrates application-to-database communication.
+
+The `/metrics` endpoint exposes application metrics for Prometheus.
+
+---
+
+### 3. Database Layer
+
+Deploy PostgreSQL as the application's persistent data store.
+
+The database is connected only to the private backend network.
+
+The backend services access PostgreSQL using:
+
+```text
+db.internal:5432
+```
+
+rather than relying directly on the database container name.
+
+---
+
+### 4. Service Discovery Layer
+
+Deploy `dnsmasq` as a lightweight internal DNS service.
+
+The DNS service maps:
+
+```text
+db.internal
+        ↓
+172.29.0.10
+```
+
+This demonstrates how applications can use stable service names instead of hard-coded infrastructure locations.
+
+---
+
+### 5. Load Balancing Layer
+
+Deploy NGINX as the load balancer.
+
+Incoming API requests are distributed between:
+
+```text
+backend-1
+backend-2
+```
+
+The load balancer performs active health checking through the backend `/health` endpoints.
+
+If a backend becomes unavailable, the health-check process removes it from the active upstream configuration.
+
+---
+
+### 6. Monitoring Layer
+
+Prometheus collects both infrastructure and application-level metrics.
+
+The monitoring stack includes:
+
+- Prometheus
+- cAdvisor
+- Blackbox Exporter
+- Custom Flask application metrics
+
+This allows the platform to monitor both:
+
+**Infrastructure**
+
+```text
+Container CPU
+Container network activity
+Service availability
+Endpoint health
+```
+
+and **Application behaviour**
+
+```text
+HTTP request counters
+Requests per backend
+HTTP status codes
+Request paths
+```
+
+---
+
+### 7. Metrics API Layer
+
+A dedicated Metrics API sits between Prometheus and the frontend.
+
+Its responsibilities are:
+
+1. Query Prometheus for application traffic.
+2. Calculate backend request activity over the previous 60 seconds.
+3. Check the health of important services.
+4. Return a simplified JSON response to the frontend.
+
+This keeps Prometheus-specific querying logic outside the React application.
+
+---
+
+### 8. Dashboard Layer
+
+A React dashboard provides a visual representation of the infrastructure.
+
+The dashboard contains three primary views:
+
+- **Live Traffic**
+- **Health Status**
+- **Network Map**
+
+This makes infrastructure behaviour easier to understand without manually inspecting individual containers or monitoring endpoints.
+
+---
+
+# Solution Overview
+
+The final platform consists of multiple Docker services communicating through controlled network boundaries.
+
+```text
+                         ┌───────────────────┐
+                         │      Browser      │
+                         │      :3000        │
+                         └─────────┬─────────┘
+                                   │
+                                   ▼
+                         ┌───────────────────┐
+                         │  Frontend NGINX   │
+                         │     React UI      │
+                         └─────────┬─────────┘
+                                   │
+                                   ▼
+                         ┌───────────────────┐
+                         │    Metrics API    │
+                         │      :5001        │
+                         └─────────┬─────────┘
+                                   │
+                    ┌──────────────┼──────────────┐
+                    │              │              │
+                    ▼              ▼              ▼
+              ┌──────────┐   ┌──────────┐   ┌────────────┐
+              │Backend 1 │   │Backend 2 │   │ Prometheus │
+              │  :5000   │   │  :5000   │   │   :9090   │
+              └────┬─────┘   └────┬─────┘   └────────────┘
+                   │              │
+                   └──────┬───────┘
+                          │
+                          ▼
+                  ┌────────────────┐
+                  │    dnsmasq     │
+                  │ db.internal    │
+                  └───────┬────────┘
+                          │
+                          ▼
+                  ┌────────────────┐
+                  │   PostgreSQL   │
+                  │  172.29.0.10   │
+                  └────────────────┘
+```
+
+---
+
+# Architecture
 
 ```mermaid
 flowchart TB
+
     Browser["Browser :3000"]
 
     subgraph Public["frontend-net · PUBLIC · 172.28.0.0/24"]
@@ -81,670 +307,445 @@ flowchart TB
     Frontend -. "BLOCKED" .-> DB
 ```
 
-### Network boundaries
-
-| Service | frontend-net | backend-net |
-|---|---:|---:|
-| frontend | ✓ | |
-| loadbalancer | ✓ | |
-| metrics-api | ✓ | ✓ |
-| backend-1 | ✓ | ✓ |
-| backend-2 | ✓ | ✓ |
-| dns | | ✓ |
-| database | | ✓ |
-| prometheus | | ✓ |
-| blackbox-exporter | | ✓ |
-| cadvisor | | ✓ |
-
-`backend-net` is declared `internal: true`, and the database has no interface on `frontend-net`.
-
 ---
 
-## Project structure
+# Network Architecture
+
+The platform uses two separate Docker networks.
+
+| Network | Type | Subnet | Purpose |
+|---|---|---|---|
+| `frontend-net` | Public | `172.28.0.0/24` | User-facing services |
+| `backend-net` | Private / Internal | `172.29.0.0/24` | Application and infrastructure services |
+
+The important security boundary is:
 
 ```text
-infra-health-dashboard/
-├── docker-compose.yml
-├── README.md
-├── backend/
-│   ├── Dockerfile
-│   ├── app.py
-│   └── requirements.txt
-├── database/
-│   ├── Dockerfile
-│   ├── entrypoint.sh
-│   ├── health.py
-│   └── init.sql
-├── dns/
-│   ├── Dockerfile
-│   ├── dnsmasq.conf
-│   └── health.py
-├── loadbalancer/
-│   ├── Dockerfile
-│   ├── nginx.conf
-│   └── healthcheck.sh
-├── metrics-api/
-│   ├── Dockerfile
-│   ├── app.py
-│   └── requirements.txt
-├── monitoring/
-│   ├── blackbox.yml
-│   └── prometheus.yml
-├── frontend/
-│   ├── Dockerfile
-│   ├── nginx.conf
-│   ├── package.json
-│   ├── index.html
-│   ├── vite.config.js
-│   └── src/
-│       ├── api.js
-│       ├── App.jsx
-│       ├── main.jsx
-│       ├── styles.css
-│       └── components/
-│           ├── LiveTraffic.jsx
-│           ├── HealthStatus.jsx
-│           └── NetworkMap.jsx
-├── firewall/
-│   ├── Dockerfile
-│   └── entrypoint.sh
-└── scripts/
-    ├── generate-traffic.sh
-    ├── firewall-linux.sh
-    └── failure-tests.md
-```
-
----
-
-## Prerequisites
-
-Windows 11 with:
-
-1. Docker Desktop
-2. WSL2 integration enabled for your Linux distribution
-3. Git
-4. `curl` available inside WSL
-
-Verify:
-
-```bash
-docker --version
-docker compose version
-curl --version
-```
-
----
-
-## 1. Start the stack
-
-From WSL:
-
-```bash
-git clone <your-repository-url>
-cd infra-health-dashboard
-docker compose up --build -d
-```
-
-Check:
-
-```bash
-docker compose ps
-```
-
-You should see the application, monitoring, DNS, database, and backend services running.
-
-Open:
-
-- Dashboard: http://localhost:3000
-- Load balancer: http://localhost:8080
-- Metrics API: http://localhost:5001/metrics/summary
-- Prometheus: http://localhost:9090
-- cAdvisor: http://localhost:8081
-
----
-
-## 2. Generate traffic
-
-Run:
-
-```bash
-chmod +x scripts/generate-traffic.sh
-./scripts/generate-traffic.sh
-```
-
-Leave it running while using the dashboard.
-
-You can also make individual requests:
-
-```bash
-curl.exe http://localhost:8080/data
-curl.exe http://localhost:8080/health
-```
-
-The response from `/data` identifies which backend served the request.
-
----
-
-## 3. Understand the backend
-
-Each backend exposes:
-
-```text
-GET /health
-GET /data
-GET /metrics
-```
-
-`/health` is deliberately cheap and does not depend on PostgreSQL.
-
-`/data` connects to:
-
-```text
-db.internal:5432
-```
-
-The important point is that the Flask code never uses `database` as the hostname.
-
-The backend container is explicitly configured with:
-
-```yaml
-dns:
-  - 172.29.0.53
-```
-
-That means its resolver is the `dnsmasq` container.
-
----
-
-## 4. Understand the explicit DNS configuration
-
-The file `dns/dnsmasq.conf` contains:
-
-```text
-no-resolv
-no-hosts
-listen-address=172.29.0.53
-bind-interfaces
-address=/db.internal/172.29.0.10
-server=1.1.1.1
-```
-
-The key line is:
-
-```text
-address=/db.internal/172.29.0.10
-```
-
-So:
-
-```text
-db.internal
-    ↓
-dnsmasq
-    ↓
-172.29.0.10
-    ↓
+Frontend
+   │
+   │ X
+   ▼
 PostgreSQL
 ```
 
-This deliberately demonstrates DNS indirection instead of relying on Docker's automatic service-name discovery.
+The frontend does **not** have direct network access to PostgreSQL.
 
-Test it:
-
-```bash
-docker compose exec backend1 getent hosts db.internal
-```
-
-Expected:
+Backend services, however, can access PostgreSQL through:
 
 ```text
-172.29.0.10    db.internal
+backend
+   │
+   ▼
+db.internal
+   │
+   ▼
+PostgreSQL
 ```
 
-Then prove the database path:
-
-```bash
-curl.exe http://localhost:8080/data
-```
+This demonstrates basic network segmentation and least-privilege communication between application layers.
 
 ---
 
-## 5. Understand active load-balancer health checks
+# Load Balancing
 
-The load balancer periodically runs:
-
-```text
-GET http://backend1:5000/health
-GET http://backend2:5000/health
-```
-
-every two seconds.
-
-The script writes the healthy servers into:
+NGINX distributes application traffic between two backend instances:
 
 ```text
-/etc/nginx/conf.d/upstream.conf
+                    ┌─────────────┐
+                    │    NGINX    │
+                    │ Load Balancer│
+                    └──────┬──────┘
+                           │
+                ┌──────────┴──────────┐
+                ▼                     ▼
+          ┌───────────┐         ┌───────────┐
+          │ Backend 1 │         │ Backend 2 │
+          └───────────┘         └───────────┘
 ```
 
-and reloads NGINX.
-
-This means if backend-1 dies, it is removed from the active upstream set.
-
-Watch the checker:
-
-```bash
-docker compose logs -f loadbalancer
-```
-
-You should see:
+Both backends provide:
 
 ```text
-backend-1=UP
-backend-2=UP
+/health
 ```
+
+The load balancer continuously checks backend health.
+
+When one backend becomes unavailable, it is removed from the active upstream configuration so traffic can continue through the healthy backend.
 
 ---
 
-## 6. Understand Prometheus
+# DNS-Based Service Discovery
 
-Prometheus scrapes:
+The platform includes a dedicated `dnsmasq` service.
 
-### Custom application metrics
+Instead of coupling the application to a container IP address, backend services resolve:
 
-Both Flask backends expose:
+```text
+db.internal
+```
+
+through the internal DNS service.
+
+```text
+backend
+   │
+   │ DNS query
+   ▼
+dnsmasq
+   │
+   │ db.internal
+   ▼
+172.29.0.10
+   │
+   ▼
+PostgreSQL
+```
+
+This demonstrates the same general principle used in larger infrastructure platforms: applications communicate using **service names**, while infrastructure manages how those names resolve.
+
+---
+
+# Observability
+
+The project implements two levels of monitoring.
+
+## Infrastructure Monitoring
+
+cAdvisor provides container-level metrics such as:
+
+- CPU usage
+- Network activity
+- Container resource information
+
+Blackbox Exporter performs endpoint-level probing to determine whether services are reachable and responding correctly.
+
+---
+
+## Application Monitoring
+
+The Flask backend exposes custom Prometheus metrics.
+
+For example:
 
 ```text
 http_requests_total
 ```
 
-with a `backend` label.
-
-The dashboard query is:
-
-```promql
-sum by (backend) (
-  increase(http_requests_total{job="backends"}[60s])
-)
-```
-
-This calculates requests handled by each backend during the previous 60 seconds.
-
-### Container metrics
-
-cAdvisor supplies CPU, memory, filesystem and network metrics for the Docker containers.
-
-### Health metrics
-
-Blackbox Exporter probes the HTTP health endpoints.
-
----
-
-## 7. Understand metrics-api
-
-The endpoint:
+The metric contains labels such as:
 
 ```text
-GET /metrics/summary
+backend
+method
+path
+status
 ```
 
-combines:
+This makes it possible to determine which backend is processing requests and how much traffic it is receiving.
 
-1. Prometheus traffic data.
-2. Health checks for:
-   - frontend
-   - backend-1
-   - backend-2
-   - database
-   - dns
-   - loadbalancer
+---
 
-Example shape:
+# Metrics API
 
-```json
-{
-  "timestamp": "2026-09-04T08:00:00+00:00",
-  "traffic_last_60s": {
-    "backend-1": 42,
-    "backend-2": 39
-  },
-  "health": {
-    "frontend": {"status": "ok", "http_status": 200},
-    "backend-1": {"status": "ok", "http_status": 200},
-    "backend-2": {"status": "ok", "http_status": 200},
-    "database": {"status": "ok", "http_status": 200},
-    "dns": {"status": "ok", "http_status": 200},
-    "loadbalancer": {"status": "ok", "http_status": 200}
-  },
-  "prometheus": "ok"
-}
+The Metrics API queries Prometheus using application-specific PromQL queries.
+
+For example, the system calculates backend request activity over a rolling 60-second window.
+
+The API also checks the health of:
+
+```text
+Frontend
+Backend 1
+Backend 2
+Database
+DNS
+Load Balancer
+```
+
+The React dashboard consumes the Metrics API rather than communicating directly with Prometheus.
+
+This creates a clean separation:
+
+```text
+Prometheus
+    │
+    ▼
+Metrics API
+    │
+    ▼
+React Dashboard
 ```
 
 ---
 
-# Dashboard views
+# Dashboard
+
+The dashboard provides three main views.
 
 ## Live Traffic
 
-The React component polls:
+Displays request activity for both backend instances over a rolling 60-second window.
 
-```text
-/api/metrics/summary
-```
-
-every 2.5 seconds.
-
-The chart displays the rolling 60-second request count for each backend.
-
-### Screenshot placeholder
-
-> **Paste screenshot here:** `docs/screenshots/live-traffic.png`
+This makes load-balancer behaviour visible in real time.
 
 ---
 
 ## Health Status
 
-The health view polls every 3 seconds and displays six cards:
+Displays the current health state of the major platform components.
 
-- frontend
-- backend-1
-- backend-2
-- database
-- dns
-- loadbalancer
-
-### Screenshot placeholder
-
-> **Paste screenshot here:** `docs/screenshots/health-status.png`
+```text
+Frontend       ✓
+Backend-1      ✓
+Backend-2      ✓
+Database       ✓
+DNS            ✓
+Load Balancer  ✓
+```
 
 ---
 
 ## Network Map
 
-The SVG view shows:
+Provides a visual representation of:
 
-- public `frontend-net`
-- private `backend-net`
-- backend → database traffic
-- backend → DNS resolution
-- load balancer → backend traffic
-- metrics-api probes
-- frontend → database as a red **BLOCKED** path
-
-### Screenshot placeholder
-
-> **Paste screenshot here:** `docs/screenshots/network-map.png`
+- Public network
+- Private network
+- Service relationships
+- Database connectivity
+- DNS resolution
+- Monitoring paths
+- Blocked frontend-to-database communication
 
 ---
 
-# Failure Testing
+# Failure Handling
 
-Keep the dashboard open and run the tests below from another WSL terminal.
+The project also demonstrates failure scenarios.
 
-## Test 1 — Kill backend-1
-
-```bash
-docker compose stop backend1
-```
-
-Expected:
-
-1. `backend-1` health card becomes red.
-2. NGINX active checker marks backend-1 as DOWN.
-3. NGINX removes backend-1 from the upstream.
-4. New traffic is handled by backend-2.
-5. Live Traffic approaches 100% backend-2.
-
-Restore:
-
-```bash
-docker compose start backend1
-```
-
----
-
-## Test 2 — Kill backend-2
-
-```bash
-docker compose stop backend2
-```
-
-Expected:
-
-- backend-2 card turns red.
-- Traffic shifts to backend-1.
-
-Restore:
-
-```bash
-docker compose start backend2
-```
-
----
-
-## Test 3 — Break DNS
-
-```bash
-docker compose stop dns
-```
-
-Expected:
-
-- DNS health card turns red.
-- New backend `/data` database lookups using `db.internal` fail.
-- Backend `/health` can remain green because that endpoint intentionally does not require the database.
-
-Restore:
-
-```bash
-docker compose start dns
-```
-
----
-
-## Test 4 — Stop the database
-
-```bash
-docker compose stop database
-```
-
-Expected:
-
-- Database card turns red.
-- `/data` requests fail because PostgreSQL is unavailable.
-- Backend health can remain green.
-
-Restore:
-
-```bash
-docker compose start database
-```
-
----
-
-## Test 5 — Stop the load balancer
-
-```bash
-docker compose stop loadbalancer
-```
-
-Expected:
-
-- Load balancer card turns red.
-- Direct requests to `localhost:8080` fail.
-- The backend containers themselves can remain healthy.
-
-Restore:
-
-```bash
-docker compose start loadbalancer
-```
-
----
-
-# Firewall / network isolation test
-
-Start the optional firewall service:
-
-```bash
-docker compose --profile firewall up -d firewall
-```
-
-View the firewall log:
-
-```bash
-docker compose --profile firewall logs firewall
-```
-
-The intended rule is:
+For example, when one backend instance is stopped:
 
 ```text
-172.28.0.0/24 → 172.29.0.10 : DROP
+Backend-1
+    ↓
+UNAVAILABLE
 ```
 
-Test from the frontend container:
+The monitoring system detects the failure and the load-balancing layer stops sending traffic to the unhealthy instance.
 
-```bash
-docker compose exec frontend sh -c   'wget -T 2 -O - http://172.29.0.10:5432 || true'
-```
+The dashboard reflects the changed health state.
 
-The request should fail.
+After the backend is restored, it becomes available again.
 
-The stronger architectural control is that the database is not connected to `frontend-net` at all and `backend-net` is declared internal.
-
-On a native Linux Docker host, the equivalent host-level rule can be installed in the Docker `DOCKER-USER` chain:
-
-```bash
-sudo iptables -I DOCKER-USER 1   -s 172.28.0.0/24   -d 172.29.0.10   -j DROP
-```
-
-Verify:
-
-```bash
-sudo iptables -L DOCKER-USER -n --line-numbers
-```
-
-> Docker Desktop on Windows runs its Linux containers inside a managed Linux environment, so host-level iptables behavior is different from a native Linux Docker host. This project therefore treats Docker network isolation as the deterministic security boundary and the iptables component as defense-in-depth.
+This demonstrates a basic form of **service resilience and failure detection**.
 
 ---
 
-# What to explain in an interview
+# Technology Stack
 
-### Why two networks?
-
-The public application tier does not need direct access to the database. Keeping PostgreSQL on a private network reduces the reachable attack surface.
-
-### Why two backend replicas?
-
-They demonstrate horizontal scaling and allow the load balancer to fail over when one instance disappears.
-
-### Why custom DNS?
-
-It demonstrates that application configuration can be decoupled from Docker service names. `db.internal` is an application-level DNS contract.
-
-### Why health checks separate from traffic?
-
-A cheap `/health` endpoint allows the load balancer to determine whether a backend should receive traffic without requiring a database query for every health check.
-
-### Why Prometheus + cAdvisor?
-
-Prometheus handles time-series collection, while cAdvisor exposes container-level resource/network metrics.
-
-### Why metrics-api?
-
-The React UI should not need to understand PromQL or know where every internal service lives. `metrics-api` acts as a small aggregation layer.
-
-### Why active checks instead of passive NGINX checks?
-
-Passive checks only discover a failure when traffic hits a failed upstream. The active checker continuously calls `/health`, so a failed backend can be removed before the next user request.
+| Technology | Purpose |
+|---|---|
+| Docker | Containerization |
+| Docker Compose | Multi-container orchestration |
+| NGINX | Web server and load balancer |
+| Flask | Backend and Metrics API |
+| Gunicorn | Production-style Python application server |
+| PostgreSQL | Relational database |
+| dnsmasq | Internal DNS / service discovery |
+| Prometheus | Metrics collection and querying |
+| cAdvisor | Container resource monitoring |
+| Blackbox Exporter | Endpoint availability monitoring |
+| React | Dashboard UI |
+| Vite | Frontend build tooling |
+| Recharts | Traffic visualization |
+| Python | Backend, metrics and health-check logic |
+| Bash | Infrastructure automation and testing |
 
 ---
 
-# Useful commands
+# Project Structure
+
+```text
+infra-health-dashboard/
+│
+├── backend/
+│   ├── Dockerfile
+│   ├── app.py
+│   └── requirements.txt
+│
+├── database/
+│   ├── Dockerfile
+│   ├── entrypoint.sh
+│   ├── health.py
+│   └── init.sql
+│
+├── dns/
+│   ├── Dockerfile
+│   ├── dnsmasq.conf
+│   └── health.py
+│
+├── loadbalancer/
+│   ├── Dockerfile
+│   ├── healthcheck.sh
+│   └── nginx.conf
+│
+├── metrics-api/
+│   ├── Dockerfile
+│   ├── app.py
+│   └── requirements.txt
+│
+├── monitoring/
+│   ├── prometheus.yml
+│   └── blackbox.yml
+│
+├── frontend/
+│   ├── Dockerfile
+│   ├── nginx.conf
+│   ├── package.json
+│   └── src/
+│
+├── firewall/
+│   ├── Dockerfile
+│   └── entrypoint.sh
+│
+├── scripts/
+│   ├── generate-traffic.sh
+│   ├── verify.sh
+│   ├── firewall-linux.sh
+│   └── failure-tests.md
+│
+├── docs/
+│   └── screenshots/
+│
+├── docker-compose.yml
+├── README.md
+└── .gitignore
+```
+
+---
+
+# Running the Project
+
+Clone the repository:
 
 ```bash
-# Stack status
+git clone https://github.com/dhruvabhat24/infra-health-dashboard.git
+cd infra-health-dashboard
+```
+
+Build the containers:
+
+```bash
+docker compose build
+```
+
+Start the platform:
+
+```bash
+docker compose up -d
+```
+
+Check service status:
+
+```bash
 docker compose ps
+```
 
-# Logs
-docker compose logs -f backend1 backend2 loadbalancer metrics-api
+Open the dashboard:
 
-# Inspect networks
-docker network inspect frontend-net
-docker network inspect backend-net
+```text
+http://localhost:3000
+```
 
-# Check backend DNS
-docker compose exec backend1 getent hosts db.internal
+The load balancer can also be accessed directly:
 
-# Backend data
-curl.exe http://localhost:8080/data
-
-# Metrics summary
-curl.exe http://localhost:5001/metrics/summary
-
-# Prometheus
-curl.exe http://localhost:9090/-/healthy
-
-# Stop everything
-docker compose down
-
-# Stop everything and delete persistent volumes
-docker compose down -v
+```text
+http://localhost:8080
 ```
 
 ---
 
-# Portfolio talking points
+# What This Project Demonstrates
 
-This project is intentionally small enough to run on a laptop but demonstrates several production-oriented concepts:
+This project demonstrates practical understanding of several DevOps and platform-engineering concepts:
 
-**Networking**
-→ network segmentation  
-→ private database  
-→ explicit DNS  
-→ firewall defense-in-depth  
+### Containerization
 
-**Reliability**
-→ two replicas  
-→ active health checks  
-→ automatic removal of unhealthy instances  
+Packaging application and infrastructure components as reproducible Docker containers.
 
-**Observability**
-→ Prometheus  
-→ cAdvisor  
-→ Blackbox Exporter  
-→ custom application counters  
-→ aggregated metrics API  
+### Network Segmentation
 
-**Application**
-→ React  
-→ Recharts  
-→ live polling  
-→ operational health dashboard  
+Separating public-facing and private infrastructure using Docker networks.
 
-**DevOps**
-→ Dockerfiles  
-→ Docker Compose  
-→ repeatable local environment  
-→ failure injection  
-→ observable recovery  
+### Service Discovery
+
+Using DNS-based service names instead of directly coupling applications to IP addresses.
+
+### Load Balancing
+
+Distributing requests across multiple backend instances.
+
+### Health Checking
+
+Detecting unavailable services and exposing service health to the platform.
+
+### Observability
+
+Collecting both infrastructure and application-level metrics.
+
+### Failure Detection
+
+Detecting backend failures and reflecting them in the monitoring dashboard.
+
+### Infrastructure Visualization
+
+Turning infrastructure state and metrics into an understandable real-time dashboard.
+
+### Automation
+
+Using Docker Compose, configuration files, health checks and shell scripts to automate infrastructure setup and validation.
 
 ---
 
-# Future improvements
+# Why I Built This
 
-For a production/cloud version, consider:
+The purpose of this project is to move beyond simply learning individual DevOps tools.
 
-- Kubernetes Deployments and Services
-- Ingress
-- Kubernetes NetworkPolicies
-- External DNS
-- Prometheus Operator
-- Grafana dashboards
-- Alertmanager
-- OpenTelemetry traces
-- Terraform infrastructure
-- GitHub Actions CI/CD
-- image scanning with Trivy
-- non-root containers
-- secrets management
-- HTTPS/TLS
+Instead of using Docker, NGINX, Prometheus, DNS and networking concepts independently, this project combines them into one working platform.
+
+The focus is on understanding the relationship between:
+
+```text
+Networking
+     +
+Application Services
+     +
+Service Discovery
+     +
+Load Balancing
+     +
+Monitoring
+     +
+Failure Detection
+     +
+Visualization
+```
+
+This provides a practical foundation for understanding larger concepts used in **Cloud Engineering, DevOps, SRE and Platform Engineering**.
+
+---
+
+
+# Author
+
+**Dhruva Bhat S N**
+
+DevOps / Cloud & Infrastructure Engineering
+
+GitHub: [@Dhruvabhat24](https://github.com/dhruvabhat24)
+
+---
+
+## License
+
+This project is intended for learning, portfolio development, and demonstration of DevOps and infrastructure engineering concepts.
