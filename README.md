@@ -27,35 +27,32 @@ A DevOps portfolio project demonstrating Docker networking, private service-to-s
 
 ```mermaid
 flowchart TB
-    Browser["Browser :3000"] --> Frontend["frontend
-NGINX"]
-    Browser --> LB["loadbalancer
-NGINX :8080"]
+    Browser["Browser :3000"]
 
     subgraph Public["frontend-net · PUBLIC · 172.28.0.0/24"]
-      Frontend
-      LB
-      MAPI["metrics-api :5001"]
-      B1["backend-1 :5000"]
-      B2["backend-2 :5000"]
+        Frontend["Frontend NGINX"]
+        LB["Load Balancer NGINX :8080"]
+        MAPI["Metrics API :5001"]
     end
 
     subgraph Private["backend-net · PRIVATE / INTERNAL · 172.29.0.0/24"]
-      B1
-      B2
-      DNS["dnsmasq
-172.29.0.53"]
-      DB["PostgreSQL
-172.29.0.10"]
-      Prom["Prometheus :9090"]
-      BB["Blackbox Exporter"]
-      CAD["cAdvisor"]
-      MAPI
+        B1["Backend-1 :5000 · dual-homed"]
+        B2["Backend-2 :5000 · dual-homed"]
+        DNS["dnsmasq · 172.29.0.53"]
+        DB["PostgreSQL · 172.29.0.10:5432"]
+        Prom["Prometheus :9090"]
+        BB["Blackbox Exporter"]
+        CAD["cAdvisor"]
     end
 
+    Browser --> Frontend
+    Browser --> LB
+
     Frontend --> MAPI
+
     LB --> B1
     LB --> B2
+
     MAPI --> B1
     MAPI --> B2
     MAPI --> DB
@@ -64,6 +61,7 @@ NGINX :8080"]
 
     B1 -->|DNS lookup| DNS
     B2 -->|DNS lookup| DNS
+
     B1 -->|db.internal:5432| DB
     B2 -->|db.internal:5432| DB
 
@@ -71,6 +69,7 @@ NGINX :8080"]
     Prom --> B2
     Prom --> CAD
     Prom --> BB
+
     BB --> Frontend
     BB --> LB
     BB --> MAPI
