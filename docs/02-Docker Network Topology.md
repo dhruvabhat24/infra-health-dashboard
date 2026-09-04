@@ -223,10 +223,3 @@ In a real DevOps environment, network configuration can be validated through:
 
 Creating separate network layers also follows the principle of **least network exposure**: services should only be connected to networks required for their function.
 
----
-
-## 12. Next Test
-
-The next network test will inspect the actual container membership of `frontend-net` and `backend-net`.
-
-That test will verify that each service is attached to the correct network and that PostgreSQL is isolated from the frontend network.
