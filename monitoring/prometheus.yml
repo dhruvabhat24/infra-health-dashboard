@@ -1,0 +1,39 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  # Custom application metrics.
+  - job_name: backends
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - backend1:5000
+          - backend2:5000
+
+  # Container CPU, memory, filesystem and network metrics for every container.
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  # Health/probe metrics for the HTTP services.
+  - job_name: blackbox-http
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - http://frontend/health
+          - http://backend1:5000/health
+          - http://backend2:5000/health
+          - http://database:8080/health
+          - http://dns:8080/health
+          - http://loadbalancer/health
+          - http://metrics-api:5001/health
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115

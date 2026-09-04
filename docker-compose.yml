@@ -1,0 +1,209 @@
+services:
+  database:
+    build: ./database
+    environment:
+      POSTGRES_DB: infra
+      POSTGRES_USER: infra
+      POSTGRES_PASSWORD: infra_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    networks:
+      backend-net:
+        ipv4_address: 172.29.0.10
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U infra -d infra"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  dns:
+    build: ./dns
+    networks:
+      backend-net:
+        ipv4_address: 172.29.0.53
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend1:
+    build: ./backend
+    environment:
+      BACKEND_NAME: backend-1
+      DB_HOST: db.internal
+      DB_NAME: infra
+      DB_USER: infra
+      DB_PASSWORD: infra_password
+      DB_PORT: 5432
+    depends_on:
+      database:
+        condition: service_healthy
+      dns:
+        condition: service_healthy
+    dns:
+      - 172.29.0.53
+    networks:
+      frontend-net:
+      backend-net:
+        ipv4_address: 172.29.0.11
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend2:
+    build: ./backend
+    environment:
+      BACKEND_NAME: backend-2
+      DB_HOST: db.internal
+      DB_NAME: infra
+      DB_USER: infra
+      DB_PASSWORD: infra_password
+      DB_PORT: 5432
+    depends_on:
+      database:
+        condition: service_healthy
+      dns:
+        condition: service_healthy
+    dns:
+      - 172.29.0.53
+    networks:
+      frontend-net:
+      backend-net:
+        ipv4_address: 172.29.0.12
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  loadbalancer:
+    build: ./loadbalancer
+    depends_on:
+      backend1:
+        condition: service_healthy
+      backend2:
+        condition: service_healthy
+    networks:
+      frontend-net:
+        ipv4_address: 172.28.0.10
+    ports:
+      - "8080:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  metrics-api:
+    build: ./metrics-api
+    environment:
+      PROMETHEUS_URL: http://prometheus:9090
+      FRONTEND_URL: http://frontend/health
+      BACKEND1_URL: http://backend1:5000/health
+      BACKEND2_URL: http://backend2:5000/health
+      DATABASE_URL: http://database:8080/health
+      DNS_URL: http://dns:8080/health
+      LOADBALANCER_URL: http://loadbalancer/health
+    depends_on:
+      - prometheus
+      - loadbalancer
+      - backend1
+      - backend2
+      - database
+      - dns
+    networks:
+      frontend-net:
+      backend-net:
+    ports:
+      - "5001:5001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5001/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      - metrics-api
+    networks:
+      frontend-net:
+    ports:
+      - "3000:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      backend-net:
+    ports:
+      - "9090:9090"
+
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.27.0
+    command:
+      - --config.file=/etc/blackbox_exporter/blackbox.yml
+    volumes:
+      - ./monitoring/blackbox.yml:/etc/blackbox_exporter/blackbox.yml:ro
+    networks:
+      frontend-net:
+      backend-net:
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /dev/disk:/dev/disk:ro
+      - /var/lib/docker:/var/lib/docker:ro
+    networks:
+      backend-net:
+    ports:
+      - "8081:8080"
+
+  firewall:
+    build: ./firewall
+    privileged: true
+    pid: host
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      FRONTEND_SUBNET: 172.28.0.0/24
+      DATABASE_IP: 172.29.0.10
+    profiles: ["firewall"]
+
+volumes:
+  postgres-data:
+  prometheus-data:
+
+networks:
+  frontend-net:
+    name: frontend-net
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+
+  backend-net:
+    name: backend-net
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.29.0.0/24
